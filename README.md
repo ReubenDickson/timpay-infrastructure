@@ -2,7 +2,7 @@
 
 This repository contains the **Infrastructure as Code (IaC)** used to migrate TimPay's infrastructure from a legacy DigitalOcean environment to a highly available, multi-AZ architecture on AWS.
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 The system is divided into three logical tiers across three Availability Zones:
 
@@ -20,7 +20,7 @@ The infrastructure is built using a modular Terraform pattern:
 
 * **Security**: Implements a "Defense in Depth" strategy using layered Security Groups.
 
-## 📂 Repository Structure
+## Repository Structure
 
 ``` bash
 timpay-infrastructure/
