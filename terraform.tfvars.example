@@ -1,0 +1,3 @@
+aws_region   = "us-east-1"
+project_name = "timpay-prod"
+db_password = "ChangeMe123!" # Pass this via environment variable instead!

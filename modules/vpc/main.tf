@@ -1,0 +1,35 @@
+# Create the VPC
+resource "aws_vpc" "main" {
+  cidr_block           = var.vpc_cidr
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  tags = {
+    Name = "${var.project_name}-vpc"
+  }
+}
+
+# Create 3 Public Subnets (for the Load Balancer)
+resource "aws_subnet" "public" {
+  count                   = 3
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = cidrsubnet(var.vpc_cidr, 8, count.index) # E.g., 10.0.0.0/24, 10.0.1.0/24
+  availability_zone       = var.availability_zones[count.index]
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "${var.project_name}-public-${count.index + 1}"
+  }
+}
+
+# Create 3 Private App Subnets (for the Node.js Servers)
+resource "aws_subnet" "private_app" {
+  count             = 3
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = cidrsubnet(var.vpc_cidr, 8, count.index + 10) # Offsetting to 10.0.10.0/24
+  availability_zone = var.availability_zones[count.index]
+
+  tags = {
+    Name = "${var.project_name}-app-${count.index + 1}"
+  }
+}
