@@ -22,6 +22,7 @@ The infrastructure is built using a modular Terraform pattern:
 
 ## Repository Structure
 
+
 ``` bash
 timpay-infrastructure/
 ├── main.tf                 # Root module (orchestrates VPC, RDS, Compute)
