@@ -1,3 +1,7 @@
+provider "aws" {
+  region = var.aws_region
+}
+
 # 1. Setup the Network
 module "networking" {
   source             = "./modules/vpc"
