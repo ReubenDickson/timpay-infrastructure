@@ -1,29 +1,60 @@
-## TimPay AWS Infrastructure Migration
+# TimPay AWS Infrastructure Migration
 
-This repository contains the **Infrastructure as Code (IaC)** used to migrate TimPay's infrastructure from a legacy DigitalOcean environment to a highly available, multi-AZ architecture on AWS.
+This repository contains the **Infrastructure as Code (IaC)** used to migrate TimPay's infrastructure from a legacy DigitalOcean environment to a highly available, fault-tolerant, and scalable AWS architecture.
+
+---
+
+## Overview
+
+The goal of this project is to eliminate single points of failure, introduce automated scaling, and enable **zero-downtime migration** to AWS using a reproducible and secure infrastructure model.
+
+Key outcomes:
+- High Availability across **three Availability Zones (3-AZ)**
+- Fully automated infrastructure using Terraform
+- Zero-downtime migration via live database replication
+- Secure, production-grade cloud architecture
+
+---
 
 ## Architecture Overview
 
-The system is divided into three logical tiers across three Availability Zones:
+The system is designed using a **three-tier architecture** distributed across **three Availability Zones (AZs)**:
 
-* **Public Tier**: Application Load Balancer (ALB) handles incoming HTTPS traffic.
-* **Application Tier**: Private EC2 instances managed by an Auto Scaling Group (ASG).
-* **Database Tier**: Amazon RDS Multi-AZ instance for high-availability data storage.
+### **1. Public Tier**
+- Application Load Balancer (ALB)
+- Handles incoming HTTPS traffic
+- Performs health checks and routes traffic to healthy instances
 
-The infrastructure is built using a modular Terraform pattern:
+### **2. Application Tier**
+- EC2 instances running Node.js
+- Managed by an Auto Scaling Group (ASG)
+- Deployed in **private subnets across 3 AZs**
 
-* **VPC Module**: Creates a 3-AZ network with public subnets for the Load Balancer and private subnets for the Application and Database tiers.
+### **3. Database Tier**
+- Amazon RDS (MySQL 8.0)
+- Multi-AZ deployment with automatic failover
+- Fully isolated in private subnets (no public access)
 
-* **RDS Module**: Deploys a Multi-AZ MySQL 8.0 instance for high availability.
+### **4. Storage Layer**
+- Amazon S3 for static assets (images/files)
+- Eliminates dependency on instance-local storage
 
-* **Compute Module**: Configures an Application Load Balancer (ALB) and an Auto Scaling Group (ASG) with a self-healing Launch Template.
+---
 
-* **Security**: Implements a "Defense in Depth" strategy using layered Security Groups.
+## High Availability Strategy (3-AZ Design)
+
+The infrastructure is distributed across **three Availability Zones** to ensure resilience and graceful degradation:
+
+- Failure of one AZ results in ~33% capacity reduction (not 50%)
+- Remaining AZs absorb traffic with minimal performance impact
+- Auto Scaling dynamically compensates for lost capacity
+- No single point of failure at the data center level
+
+---
 
 ## Repository Structure
 
-
-``` bash
+```bash
 timpay-infrastructure/
 ├── main.tf                 # Root module (orchestrates VPC, RDS, Compute)
 ├── variables.tf            # Global input definitions
@@ -33,53 +64,149 @@ timpay-infrastructure/
 └── modules/
     ├── vpc/                # Networking (Subnets, IGW, Route Tables)
     ├── rds/                # Managed Database (Subnet groups, MySQL)
-    └── compute/            # ASG, ALB, and userdata.sh bootstrap script
-
+    └── compute/            # ASG, ALB, Launch Template, bootstrap scripts
 ```
+
+## Terraform State Management
+
+Terraform state is stored remotely using an S3 backend with state locking via DynamoDB.
+
+This ensures:
+
+i. Safe team collaboration
+ii. State consistency
+iii. Prevention of concurrent modifications
+iv. Improved reliability in production environments
 
 ## Deployment Instructions
 
 1. Prerequisites
-Terraform installed (v1.0+)
-
-AWS CLI configured with appropriate credentials.
+Terraform (v1.0+)
+AWS CLI configured with appropriate credentials
 
 2. Initialization
-Initialize the backend and download the necessary providers:
-
 ``` bash
 terraform init
 ```
+
 3. Configuration
-Create a local file named secret.tfvars (this is ignored by Git) to store sensitive information:
 
-Terraform
-db_password = "YourSecurePasswordHere"
-
-4. Plan & Apply
-Review the execution plan:
-
+Create a local file named secret.tfvars (ignored by Git):
 ``` bash
-terraform plan -var-file="secret.tfvars"
+db_password = "YourSecurePasswordHere"
 ```
 
-If the plan looks correct, deploy the infrastructure:
-
+4. Plan & Apply
 ``` bash
+terraform plan -var-file="secret.tfvars"
 terraform apply -var-file="secret.tfvars"
 ```
 
-## Operational Tasks
+## Zero-Downtime Migration Strategy
 
-Disaster Recovery Drill
-To simulate a regional failover, change the aws_region in terraform.tfvars and update the db_snapshot_identifier to restore from the latest cross-region backup.
+This infrastructure supports a zero-downtime migration using a dual-environment approach.
 
-Scaling
-The Auto Scaling Group is configured to maintain a minimum of 2 instances and a maximum of 5. To adjust this, modify the variables in the compute module.
+Migration Steps:
 
-Security
-Database: Not accessible from the internet; only accepts traffic from the App Security Group.
+i. Deploy AWS Infrastructure
+ii. Provision all resources using Terraform
+iii. Validate ALB endpoint and application readiness
 
-Application: Located in private subnets; access is restricted to the Load Balancer.
+Database Migration
+Use AWS Database Migration Service (DMS)
 
-Secrets: Database passwords are treated as sensitive variables and injected at runtime via User Data.
+Enable:
+i. Full data load
+ii. Change Data Capture (CDC)
+
+Ensure replication lag = 0 before cutover
+
+Static Asset Migration
+``` bash
+aws s3 sync /local/images s3://your-bucket-name
+```
+
+Parallel Environment Execution
+Run DigitalOcean and AWS environments simultaneously
+
+DNS Cutover
+- Reduce TTL to 60 seconds
+- Switch DNS to ALB endpoint
+
+Post-Cutover Monitoring
+- Monitor logs, performance, and error rates
+- Decommission Legacy Infrastructure only after full validation
+
+Pre-Cutover Validation Checklist
+- ALB endpoint returns HTTP 200 OK
+- All EC2 instances pass health checks
+- Database replication lag = 0
+- Application logs show no critical errors
+- End-to-end functionality verified
+
+## Rollback Strategy
+
+In case of issues during migration:
+
+- DNS can be reverted to DigitalOcean immediately (low TTL)
+- Legacy infrastructure remains active during migration
+- Database consistency maintained via replication
+- Recovery Time Objective (RTO): < 5 minutes
+
+## Auto Scaling & Performance
+- Target tracking scaling policy based on CPU utilization (~60%)
+- Even distribution of instances across 3 AZs
+- Automatic scale-out during peak load
+- Automatic scale-in during low demand
+
+## Monitoring & Observability
+- Metrics, dashboards, and alerts via Amazon CloudWatch
+- Centralized logging via CloudWatch Logs
+- ALB health checks for real-time instance validation
+
+Alerts configured for:
+- High CPU usage
+- Application errors
+- Instance health failures
+
+## Security Architecture
+
+A layered Defense-in-Depth approach is implemented:
+
+- Database in private subnets (no public access)
+- Application instances accessible only via ALB
+- Security Groups enforce strict traffic control
+- IAM roles follow least-privilege principle
+
+## Secrets Management
+- Sensitive data managed via AWS Secrets Manager or SSM Parameter Store
+- No hard-coded credentials in source code
+
+Encryption
+- Data encrypted at rest (RDS, S3)
+- Data encrypted in transit (TLS/HTTPS)
+
+Operational Tasks
+Scaling: Adjust ASG capacity via variables in the compute module.
+
+## Disaster Recovery Drill
+- Restore database from latest snapshot
+- Deploy infrastructure in alternate region
+- Update DNS to point to new region
+
+## Success Criteria
+- Zero seconds of perceived downtime during migration
+- Multi-AZ fault tolerance
+- Automatic scaling under load
+- Fully reproducible infrastructure via Terraform
+- Secure and production-ready environment
+
+## Conclusion
+
+This infrastructure transforms TimPay from a fragile, manually managed system into a resilient, scalable, and production-grade cloud platform.
+
+The design ensures:
+- Continuous availability
+- Data integrity
+- Operational transparency
+- Future scalability
